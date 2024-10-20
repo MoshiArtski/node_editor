@@ -22,12 +22,13 @@ export function MenuBarComponent() {
   const [isProjectLoading, setIsProjectLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isConfirmationDialogOpen, setIsConfirmationDialogOpen] = useState(false); // For confirmation dialog
+  const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false); // Separate state for project dialog
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   // Base API URLs
-  const API_PROJECT_MANAGER_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8004/projects';
-  const API_GENERATION_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8002'; // Ensure this matches your routes
+  const API_PROJECT_MANAGER_URL = process.env.NEXT_PUBLIC_API_PROJECT_MANAGER_URL || 'http://127.0.0.1:8004/projects';
+  const API_GENERATION_URL = process.env.NEXT_PUBLIC_API_GENERATION_URL || 'http://127.0.0.1:8002'; // Ensure this matches your routes
 
   // Handle project creation
   const handleCreateProject = async () => {
@@ -177,6 +178,7 @@ export function MenuBarComponent() {
         title: "Welcome back!",
         description: "You've successfully signed in.",
       });
+      setIsDialogOpen(false); // Close the sign-in modal when signed in successfully
     } catch (error) {
       toast({
         title: "Sign in failed",
@@ -215,7 +217,7 @@ export function MenuBarComponent() {
                       <FilePlus className="w-4 h-4 mr-2" />
                       Create Project
                     </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={handleOpenProject}>
+                    <DropdownMenuItem onSelect={() => setIsProjectDialogOpen(true)}>
                       <FolderOpen className="w-4 h-4 mr-2" />
                       Open Project
                     </DropdownMenuItem>
@@ -272,35 +274,34 @@ export function MenuBarComponent() {
       </Card>
 
       {/* Confirmation Dialog for Project Generation */}
-<Dialog open={isConfirmationDialogOpen} onOpenChange={setIsConfirmationDialogOpen}>
-  <DialogContent className="max-w-lg mx-auto p-6 bg-white rounded-md shadow-lg border border-gray-200">
-    <DialogHeader className="space-y-2 text-center">
-      <DialogTitle className="text-xl font-semibold text-primary">
-        Confirm Project Generation
-      </DialogTitle>
-      <DialogDescription className="text-sm text-muted-foreground">
-        Are you sure you want to generate the project "<span className="font-medium">{projectName}</span>"? This action cannot be undone.
-      </DialogDescription>
-    </DialogHeader>
-    <div className="flex justify-center mt-4 space-x-4">
-      <Button onClick={() => setIsConfirmationDialogOpen(false)} variant="ghost" className="w-1/3 py-2 rounded-md border border-gray-300 hover:bg-gray-100">
-        Cancel
-      </Button>
-      <Button onClick={confirmGenerateProject} disabled={isProjectLoading} className="w-1/3 py-2 rounded-md bg-accent text-white hover:bg-accent-dark">
-        {isProjectLoading ? 'Generating...' : 'Confirm'}
-      </Button>
-    </div>
-  </DialogContent>
-</Dialog>
-
+      <Dialog open={isConfirmationDialogOpen} onOpenChange={setIsConfirmationDialogOpen}>
+        <DialogContent className="max-w-lg mx-auto p-6 bg-white rounded-md shadow-lg border border-gray-200">
+          <DialogHeader className="space-y-2 text-center">
+            <DialogTitle className="text-xl font-semibold text-primary">
+              Confirm Project Generation
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Are you sure you want to generate the project "<span className="font-medium">{projectName}</span>"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center mt-4 space-x-4">
+            <Button onClick={() => setIsConfirmationDialogOpen(false)} variant="ghost" className="w-1/3 py-2 rounded-md border border-gray-300 hover:bg-gray-100">
+              Cancel
+            </Button>
+            <Button onClick={confirmGenerateProject} disabled={isProjectLoading} className="w-1/3 py-2 rounded-md bg-accent text-white hover:bg-accent-dark">
+              {isProjectLoading ? 'Generating...' : 'Confirm'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog for setting project name */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isProjectDialogOpen} onOpenChange={setIsProjectDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Generate New Project</DialogTitle>
+            <DialogTitle>Open or Create New Project</DialogTitle>
             <DialogDescription>
-              Enter the name for your new project.
+              Enter the name for your new project or open an existing one.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -313,8 +314,8 @@ export function MenuBarComponent() {
             />
           </div>
           <DialogFooter>
-            <Button onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleGenerateProject} disabled={isProjectLoading}>
+            <Button onClick={() => setIsProjectDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateProject} disabled={isProjectLoading}>
               {isProjectLoading ? 'Generating...' : 'Generate Project'}
             </Button>
           </DialogFooter>

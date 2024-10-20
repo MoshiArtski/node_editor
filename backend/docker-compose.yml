@@ -1,0 +1,58 @@
+version: '3.8'
+services:
+  node_db_service:
+    build: node_db_service
+    ports:
+      - "8000:8000"
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+
+  auth_service:
+    build: auth_service
+    ports:
+      - "8003:8003"
+    environment:
+      AUTH_SECRET: ${AUTH_SECRET}
+
+  code_parser_service:
+    build: code_parser_service
+    ports:
+      - "8001:8001"
+
+  generation_service:
+    build: generation_service
+    ports:
+      - "8002:8002"
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+
+  project_manager_service:
+    build: project_manager_service
+    ports:
+      - "8004:8004"
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - auth_service
+      - code_parser_service
+      - node_db_service
+      - generation_service
+      - project_manager_service
+
+  frontend:
+    build: ../frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_KEY}
+    depends_on:
+      - nginx
