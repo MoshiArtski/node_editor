@@ -15,8 +15,11 @@ import { Plus, Delete, AlertCircle, Copy, Check } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Toast } from "@/components/ui/toast";
+import { useDispatch, useSelector } from 'react-redux';
+import {updateState} from "@/store/nodeEditorSlice";
 
-// Type definitions with better organization
+
+// Types
 interface StateField {
   name: string;
   type: string;
@@ -28,24 +31,26 @@ interface CustomState {
   name: string;
   description: string;
   fields: StateField[];
-  imports: string[];
-  customFunctions: string;
+  imports?: string[];
+  customFunctions?: string;
 }
 
+// Default initial state
+const DEFAULT_STATE: CustomState = {
+  name: '',
+  description: '',
+  fields: [],
+  imports: [],
+  customFunctions: ''
+};
+
+// Component props
 interface StateCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialState: CustomState;
+  initialState: CustomState | null;
   onSave: (state: CustomState) => void;
-  isEditing: boolean;
-}
-
-interface FieldCardProps {
-  field: StateField;
-  index: number;
-  onUpdate: (index: number, field: Partial<StateField>) => void;
-  onRemove: (index: number) => void;
-  isLast: boolean;
+  isEditing?: boolean;
 }
 
 // Constants
@@ -107,46 +112,135 @@ const formatDocstring = (description: string, fields: StateField[]): string => {
 };
 
 const validateFieldName = (name: string): boolean => {
-  return /^[a-z_][a-z0-9_]*$/i.test(name) && name.trim() !== '';
+  const isValid = /^[a-z_][a-z0-9_]*$/i.test(name) && name.trim() !== '';
+  console.log(`Validating field name: "${name}", isValid: ${isValid}`);
+  return isValid;
 };
 
+const parseTypeCode = (code: string): Partial<CustomState> => {
+  const result: Partial<CustomState> = {
+    name: '',
+    description: '',
+    fields: [],
+    imports: [],
+    customFunctions: ''
+  };
+
+  try {
+    const lines = code.trim().split('\n');
+    let inClass = false;
+    let inDocstring = false;
+    let docstringLines: string[] = [];
+    let customFunctionsStart = -1;
+
+    // Regex patterns
+    const classPattern = /^class\s+(\w+)\s*\(\s*TypedDict\s*\)\s*:/;
+    const fieldPattern = /^\s*(\w+)\s*:\s*([^#]+)(?:#\s*(.*))?$/;
+    const docstringPattern = /^\s*"""/;
+
+    // Find class definition line
+    const classLineIndex = lines.findIndex(line => classPattern.test(line));
+
+    if (classLineIndex === -1) {
+      throw new Error('No TypedDict class found');
+    }
+
+    // Everything before the class (except the first TypedDict import) is considered imports
+    const imports = lines.slice(0, classLineIndex)
+      .filter(line => line.trim())
+      .filter(line => !line.includes('TypedDict'));
+
+    result.imports = imports;
+
+    // Extract class name
+    const classMatch = lines[classLineIndex].match(classPattern);
+    if (classMatch) {
+      result.name = classMatch[1];
+    }
+
+    // Process remaining lines after class definition
+    for (let i = classLineIndex + 1; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
+
+      if (!trimmedLine) continue;
+
+      // Handle docstring
+      if (trimmedLine.match(docstringPattern)) {
+        if (!inDocstring) {
+          inDocstring = true;
+          continue;
+        } else {
+          const processedDoc = processDocstring(docstringLines);
+          result.description = processedDoc.description;
+          if (processedDoc.fields.length > 0) {
+            result.fields = processedDoc.fields;
+          }
+          inDocstring = false;
+          continue;
+        }
+      }
+
+      if (inDocstring) {
+        docstringLines.push(line);
+        continue;
+      }
+
+      // Handle fields
+      const fieldMatch = line.match(fieldPattern);
+      if (fieldMatch) {
+        const [, name, typeStr, comment] = fieldMatch;
+        const type = typeStr.trim();
+        const isCustomType = !TYPE_OPTIONS.map(t => t.value).includes(type);
+
+        const field: StateField = {
+          name: name,
+          type: isCustomType ? 'custom' : type,
+          comment: comment?.trim() || '',
+          customType: isCustomType ? type : undefined
+        };
+
+        result.fields.push(field);
+      } else if (trimmedLine && !trimmedLine.startsWith('#')) {
+        // If we've hit a non-field line that's not a comment, assume it's custom functions
+        customFunctionsStart = i;
+        break;
+      }
+    }
+
+    // Collect custom functions
+    if (customFunctionsStart !== -1) {
+      result.customFunctions = lines.slice(customFunctionsStart).join('\n');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Error parsing type code:', error);
+    throw new Error('Failed to parse type code');
+  }
+};
+
+// Also update the generateTypeCode function to ensure imports are properly formatted
 const generateTypeCode = (state: CustomState): string => {
-  // Basic imports that are always needed based on field types
-  const imports: TypeImport[] = [
-    { module: 'typing', items: new Set(['TypedDict']) }
+  // Start with the TypedDict import
+  const codeLines: string[] = [
+    'from typing import TypedDict'
   ];
 
-  // Add custom imports from state.imports
-  const customImports = state.imports || [];
+  // Add custom imports if they exist
+  if (Array.isArray(state.imports) && state.imports.length > 0) {
+    codeLines.push(...state.imports.filter(imp => imp.trim() !== ''));
+  }
 
-  // Analyze fields for required imports
-  state.fields.forEach(field => {
-    const type = field.type === 'custom' ? field.customType : field.type;
+  // Add an empty line before the class definition
+  codeLines.push('');
 
-    // Add typing imports
-    if (type?.includes('List')) imports[0].items.add('List');
-    if (type?.includes('Optional')) imports[0].items.add('Optional');
-    if (type?.includes('Annotated')) imports[0].items.add('Annotated');
-    if (type?.includes('Dict')) imports[0].items.add('Dict');
-    if (type?.includes('Set')) imports[0].items.add('Set');
-    if (type?.includes('Tuple')) imports[0].items.add('Tuple');
-
-    // Add operator imports if needed
-    if (type?.includes('Annotated') && type.includes('operator.')) {
-      imports.push({ module: 'operator', items: new Set(['add', 'mul', 'sub', 'truediv']) });
-    }
-  });
-
-  // Generate code sections
-  const codeLines: string[] = [
-    formatImports(imports),
-    // Add custom imports
-    ...customImports,
-    '',
+  // Add class definition
+  codeLines.push(
     `class ${state.name}(TypedDict):`,
     formatDocstring(state.description, state.fields),
     ''
-  ];
+  );
 
   // Add fields
   state.fields.forEach(field => {
@@ -172,122 +266,6 @@ const generateTypeCode = (state: CustomState): string => {
   }
 
   return codeLines.join('\n');
-};
-
-const parseTypeCode = (code: string): Partial<CustomState> => {
-  const result: Partial<CustomState> = {
-    name: '',
-    description: '',
-    fields: [],
-    imports: [],
-    customFunctions: ''
-  };
-
-  try {
-    const lines = code.trim().split('\n');
-    let inClass = false;
-    let inDocstring = false;
-    let docstringLines: string[] = [];
-    let customFunctionsStart = -1;
-
-    // Regex patterns
-    const classPattern = /^class\s+(\w+)\s*\(\s*TypedDict\s*\)\s*:/;
-    const fieldPattern = /^\s*(\w+)\s*:\s*([^#]+)(?:#\s*(.*))?$/;
-    const docstringPattern = /^\s*"""/;
-    const importPattern = /^(from|import)\s+.+$/;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmedLine = line.trim();
-
-      // Collect imports
-      if (importPattern.test(trimmedLine)) {
-        if (!result.imports) {
-          result.imports = [];
-        }
-        // Skip the typing TypedDict import as it's handled automatically
-        if (!line.includes('TypedDict')) {
-          result.imports.push(line);
-        }
-        continue;
-      }
-
-      // Skip empty lines
-      if (!trimmedLine) {
-        continue;
-      }
-
-      // Find class definition
-      if (!inClass) {
-        const classMatch = line.match(classPattern);
-        if (classMatch) {
-          result.name = classMatch[1];
-          inClass = true;
-          continue;
-        }
-      }
-
-      // Handle docstring
-      if (inClass && trimmedLine.match(docstringPattern)) {
-        if (!inDocstring) {
-          inDocstring = true;
-          continue;
-        } else {
-          // Process collected docstring
-          const processedDoc = processDocstring(docstringLines);
-          result.description = processedDoc.description;
-          if (processedDoc.fields.length > 0) {
-            result.fields = processedDoc.fields;
-          }
-          inDocstring = false;
-          continue;
-        }
-      }
-
-      if (inDocstring) {
-        docstringLines.push(line);
-        continue;
-      }
-
-      // Parse fields
-      if (inClass && !inDocstring) {
-        const fieldMatch = line.match(fieldPattern);
-        if (fieldMatch) {
-          const [, name, typeStr, comment] = fieldMatch;
-          const type = typeStr.trim();
-
-          // Determine if it's a predefined type or custom
-          const isCustomType = !TYPE_OPTIONS.map(t => t.value).includes(type);
-
-          const field: StateField = {
-            name: name,
-            type: isCustomType ? 'custom' : type,
-            comment: comment?.trim() || '',
-            customType: isCustomType ? type : undefined
-          };
-
-          if (!result.fields) {
-            result.fields = [];
-          }
-          result.fields.push(field);
-        } else {
-          customFunctionsStart = i;
-          break;
-        }
-      }
-    }
-
-    // Collect custom functions
-    if (customFunctionsStart !== -1) {
-      result.customFunctions = lines.slice(customFunctionsStart).join('\n').trim();
-    }
-
-    return result;
-
-  } catch (error) {
-    console.error('Error parsing type code:', error);
-    throw new Error('Failed to parse type code');
-  }
 };
 
 // Helper function to process docstring content
@@ -488,63 +466,92 @@ export function StateCreationModalComponent({
   onClose,
   initialState,
   onSave,
-  isEditing
+  isEditing = false
 }: StateCreationModalProps) {
-  const [state, setState] = useState<CustomState>(initialState);
+  const [state, setState] = useState<CustomState>(() =>
+    initialState || DEFAULT_STATE
+  );
+  const [hasChanges, setHasChanges] = useState(false);
   const [activeTab, setActiveTab] = useState('fields');
   const [codeValue, setCodeValue] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
   const [lastUpdatedBy, setLastUpdatedBy] = useState<'fields' | 'code'>('fields');
 
+  const dispatch = useDispatch(); // 3. Initialize dispatch
+
   // Reset state when modal opens
-  useEffect(() => {
-    if (isOpen) {
+useEffect(() => {
+  if (isOpen) {
+    // Check if it's editing mode and there's an initial state
+    if (initialState && isEditing) {
+      // If editing, populate the modal with the existing data
       setState(initialState);
-      setCodeValue(generateTypeCode(initialState));
-      setHasChanges(false);
-      setLastUpdatedBy('fields');
+    } else {
+      // If not editing, reset to default state
+      setState(DEFAULT_STATE);
     }
-  }, [isOpen, initialState]);
+    // Generate the code based on the current or default state
+    const generatedCode = generateTypeCode(initialState || DEFAULT_STATE);
+    setCodeValue(generatedCode);
+    setHasChanges(false);
+    setLastUpdatedBy('fields');
+    setActiveTab('fields');
+  } else {
+    // When closing the modal, reset everything to default
+    setState(DEFAULT_STATE);
+    setHasChanges(false);
+    setActiveTab('fields');
+    setLastUpdatedBy('fields');
+    setCodeValue(generateTypeCode(DEFAULT_STATE));
+  }
+}, [isOpen, initialState, isEditing]);
+
 
   // Handle tab changes
-  const handleTabChange = (newTab: string) => {
-    if (newTab === 'code' && lastUpdatedBy === 'fields') {
-      setCodeValue(generateTypeCode(state));
-    } else if (newTab === 'fields' && lastUpdatedBy === 'code') {
-      try {
-        const parsedState = parseTypeCode(codeValue);
-        if (parsedState.name) {
-          setState(prev => ({ ...prev, ...parsedState }));
-          if (parsedState.customFunctions !== undefined) {
-            setState(prev => ({ ...prev, customFunctions: parsedState.customFunctions || '' }));
-          }
-        }
-      } catch (error) {
-        console.error('Error parsing code:', error);
-        Toast({
-          title: "Error",
-          description: "Failed to parse code. Please check your syntax.",
-          variant: "destructive",
-        });
-        return;
-      }
+const handleTabChange = (newTab: string) => {
+  if (newTab === 'code' && lastUpdatedBy === 'fields') {
+    const generatedCode = generateTypeCode(state);
+    if (generatedCode !== codeValue) {
+      setCodeValue(generatedCode);
     }
-    setActiveTab(newTab);
-  };
-
-  const handleCodeChange = useCallback((newCode: string) => {
-    setCodeValue(newCode);
-    setHasChanges(true);
-    setLastUpdatedBy('code');
+  } else if (newTab === 'fields' && lastUpdatedBy === 'code') {
     try {
-      const parsedState = parseTypeCode(newCode);
-      if (parsedState.customFunctions !== undefined) {
-        setState(prev => ({ ...prev, customFunctions: parsedState.customFunctions || '' }));
-      }
+      const parsedState = parseTypeCode(codeValue);
+      setState(prev => ({
+        ...prev,
+        ...parsedState // Use all parsed state directly
+      }));
     } catch (error) {
-      console.error('Error updating custom functions from code:', error);
+      console.error('Error parsing code:', error);
+      Toast({
+        title: "Error",
+        description: "Failed to parse code. Please check your syntax.",
+        variant: "destructive",
+      });
     }
-  }, []);
+  }
+  setActiveTab(newTab);
+};
+
+const handleCodeChange = useCallback((newCode: string) => {
+  setCodeValue(newCode);
+  setHasChanges(true);
+  setLastUpdatedBy('code');
+  try {
+    const parsedState = parseTypeCode(newCode);
+    setState(prev => ({
+      ...prev,
+      ...parsedState // Use all parsed state directly
+    }));
+  } catch (error) {
+    console.error('Error updating state from code:', error);
+    Toast({
+      title: "Error",
+      description: "Failed to parse code. Please check your syntax.",
+      variant: "destructive",
+    });
+  }
+}, []);
+
 
   const handleImportsChange = useCallback((value: string) => {
     setState(prev => ({
@@ -555,15 +562,16 @@ export function StateCreationModalComponent({
     setLastUpdatedBy('fields');
   }, []);
 
-  const handleCustomFunctionsChange = useCallback((value: string) => {
-    setState(prev => ({
-      ...prev,
-      customFunctions: value
-    }));
-    setHasChanges(true);
-    setLastUpdatedBy('fields');
-    setCodeValue(generateTypeCode({ ...state, customFunctions: value }));
-  }, [state]);
+const handleCustomFunctionsChange = useCallback((value: string) => {
+  setState(prev => ({
+    ...prev,
+    customFunctions: value,
+  }));
+  setHasChanges(true);
+  setLastUpdatedBy('fields');
+  setCodeValue(generateTypeCode({ ...state, customFunctions: value }));
+}, [state]);
+
 
   const addStateField = useCallback(() => {
     const updatedFields = [...state.fields, { name: '', type: 'str', comment: '' }];
@@ -585,41 +593,59 @@ export function StateCreationModalComponent({
     setCodeValue(generateTypeCode({ ...state, fields: updatedFields }));
   }, [state]);
 
-  const updateStateField = useCallback((index: number, field: Partial<StateField>) => {
-    const updatedFields = state.fields.map((f, i) => (i === index ? { ...f, ...field } : f));
-    setState(prev => ({
-      ...prev,
-      fields: updatedFields,
-    }));
-    setHasChanges(true);
-    setCodeValue(generateTypeCode({ ...state, fields: updatedFields }));
-  }, [state]);
+const updateStateField = useCallback((index: number, field: Partial<StateField>) => {
+  const updatedFields = state.fields.map((f, i) => (i === index ? { ...f, ...field } : f));
+
+  if (field.name && !validateFieldName(field.name)) {
+    Toast({
+      title: "Invalid Field Name",
+      description: "Field names must be valid Python identifiers.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  setState(prev => ({
+    ...prev,
+    fields: updatedFields,
+  }));
+  setHasChanges(true);
+  setCodeValue(generateTypeCode({ ...state, fields: updatedFields }));
+}, [state]);
+
 
   const handleCustomTypeChange = useCallback((index: number, value: string) => {
     updateStateField(index, { customType: value, type: 'custom' });
   }, [updateStateField]);
 
-  const isValid = useMemo(() => {
-    return (
-      state.name.trim() !== '' &&
-      state.fields.every(field => validateFieldName(field.name)) &&
-      state.fields.length > 0
-    );
-  }, [state]);
+const isValid = useMemo(() => {
+  const nameValid = state.name.trim() !== '';
+  const fieldsValid = state.fields.every(field => validateFieldName(field.name));
+  const hasFields = state.fields.length > 0;
+  return nameValid && fieldsValid && hasFields;
+}, [state]);
 
-  const handleSave = useCallback(() => {
-    if (!isValid) {
-      Toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
+const handleSave = useCallback(() => {
+  if (!isValid) {
+    Toast({
+      title: "Validation Error",
+      description: "Please fill in all required fields.",
+      variant: "destructive",
+    });
+    return;
+  }
 
-    onSave(state);
-    onClose();
-  }, [state, isValid, onSave, onClose]);
+  const updatedState = {
+    ...state,
+    name: state.name.trim(),  // Ensure the name is updated
+  };
+
+  // Dispatch the state update, including the potentially changed name
+  dispatch(updateState(updatedState));
+
+  onSave(updatedState);
+  onClose();
+}, [state, isValid, dispatch, onSave, onClose]);
 
  return (
     <DialogComponent open={isOpen} onOpenChange={onClose}>
@@ -645,10 +671,11 @@ export function StateCreationModalComponent({
                     <Alert variant="destructive">
                       <AlertCircle className="h-4 w-4"/>
                       <AlertDescription>
-                        Please fill in all required fields and ensure you have at least one field defined.
+                        Please fill in all required fields and ensure at least one field is defined.
                       </AlertDescription>
                     </Alert>
                 )}
+
 
                 <div className="grid gap-2">
                   <Label htmlFor="state-name" className="flex items-center gap-2">
@@ -688,12 +715,8 @@ export function StateCreationModalComponent({
                   <Label htmlFor="additional-imports">Additional Imports</Label>
                   <Textarea
                       id="additional-imports"
-                      value={state.imports?.length > 0 ? state.imports.join('\n') : ''}
-                      onChange={e => {
-                        setState(prev => ({ ...prev, imports: e.target.value.split('\n') }));
-                        setHasChanges(true);
-                        setLastUpdatedBy('fields');
-                      }}
+                      value={Array.isArray(state.imports) ? state.imports.join('\n') : ''}
+                      onChange={e => handleImportsChange(e.target.value)}
                       placeholder="from datetime import datetime"
                       rows={5}
                       className="resize-none font-mono"

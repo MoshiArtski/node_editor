@@ -25,7 +25,8 @@ class ProjectManagerService:
                 "description": description or "",
                 "content": {}  # Placeholder for project content
             }
-            response = self.supabase.from("projects").insert([data]).execute()
+            # Corrected Supabase call
+            response = self.supabase.table("projects").insert([data]).execute()
             self.logger.debug(f"📥 Create project response: {self._safe_json_dump(response)}")
             return response
         except Exception as e:
@@ -36,7 +37,7 @@ class ProjectManagerService:
         """Fetch a project by ID"""
         self.logger.info(f"🔍 Fetching project with ID: {project_id}")
         try:
-            response = self.supabase.from("projects").select("*").eq("id", project_id).single().execute()
+            response = self.supabase.table("projects").select("*").eq("id", project_id).single().execute()
             self.logger.debug(f"📥 Get project response: {self._safe_json_dump(response)}")
             return response
         except Exception as e:
@@ -47,7 +48,7 @@ class ProjectManagerService:
         """Update the content of an existing project"""
         self.logger.info(f"📝 Updating project ID: {project_id}")
         try:
-            response = self.supabase.from("projects").update({"content": content}).eq("id", project_id).execute()
+            response = self.supabase.table("projects").update({"content": content}).eq("id", project_id).execute()
             self.logger.debug(f"📥 Update project response: {self._safe_json_dump(response)}")
             return response
         except Exception as e:
@@ -58,7 +59,7 @@ class ProjectManagerService:
         """Delete a project by ID"""
         self.logger.info(f"🗑️ Deleting project with ID: {project_id}")
         try:
-            response = self.supabase.from("projects").delete().eq("id", project_id).execute()
+            response = self.supabase.table("projects").delete().eq("id", project_id).execute()
             self.logger.debug(f"📥 Delete project response: {self._safe_json_dump(response)}")
             return response
         except Exception as e:
