@@ -166,11 +166,13 @@ export const useAuth = () => {
     setUser(null);
   }, []);
 
-  return {
-    user,
-    loading,
-    signIn,
-    signUp,
-    signOut,
-  };
+return {
+  user,
+  setUser,
+  loading,
+  signIn,
+  signUp,
+  signOut,
+};
+
 };

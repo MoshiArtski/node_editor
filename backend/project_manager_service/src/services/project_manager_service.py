@@ -25,10 +25,10 @@ class ProjectManagerService:
                 "description": description or "",
                 "content": {}  # Placeholder for project content
             }
-            # Corrected Supabase call
+            # Supabase call
             response = self.supabase.table("projects").insert([data]).execute()
             self.logger.debug(f"📥 Create project response: {self._safe_json_dump(response)}")
-            return response
+            return {"data": response.data}
         except Exception as e:
             self.logger.error(f"🔥 Error creating project: {str(e)}")
             return {"error": str(e)}
@@ -49,8 +49,26 @@ class ProjectManagerService:
         self.logger.info(f"📝 Updating project ID: {project_id}")
         try:
             response = self.supabase.table("projects").update({"content": content}).eq("id", project_id).execute()
-            self.logger.debug(f"📥 Update project response: {self._safe_json_dump(response)}")
-            return response
+
+            # Log the full response to understand its structure
+            self.logger.debug(f"📥 Full Update Project Response: {response}")
+
+            # Use the appropriate attribute to check for errors or extract data
+            if hasattr(response, 'error') and response.error:
+                raise Exception(response.error.message)
+
+            # Assuming response.data contains the updated data
+            if hasattr(response, 'data'):
+                updated_project_data = response.data
+                if not updated_project_data:
+                    raise Exception("No data returned from the update operation.")
+
+                self.logger.debug(f"📥 Update project response: {self._safe_json_dump(updated_project_data)}")
+                return {"data": updated_project_data}
+
+            # If response format is not as expected, raise an error
+            raise Exception("Unexpected response format from Supabase.")
+
         except Exception as e:
             self.logger.error(f"🔥 Error updating project: {str(e)}")
             return {"error": str(e)}
@@ -64,4 +82,15 @@ class ProjectManagerService:
             return response
         except Exception as e:
             self.logger.error(f"🔥 Error deleting project: {str(e)}")
+            return {"error": str(e)}
+
+    async def get_all_projects_for_user(self, user_id: str):
+        """Fetch all projects for a specific user by their user_id"""
+        self.logger.info(f"🔍 Fetching all projects for user: {user_id}")
+        try:
+            response = self.supabase.table("projects").select("*").eq("user_id", user_id).execute()
+            self.logger.debug(f"📥 Get all projects response: {self._safe_json_dump(response)}")
+            return {"data": response.data}
+        except Exception as e:
+            self.logger.error(f"🔥 Error fetching projects for user: {str(e)}")
             return {"error": str(e)}

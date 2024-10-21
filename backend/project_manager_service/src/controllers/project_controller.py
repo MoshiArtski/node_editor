@@ -15,3 +15,6 @@ class ProjectController:
 
     async def delete_project(self, project_id: str):
         return await self.project_service.delete_project(project_id)
+
+    async def get_all_projects_for_user(self, user_id: str):
+        return await self.project_service.get_all_projects_for_user(user_id)

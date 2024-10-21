@@ -21,6 +21,14 @@ const nodeEditorSlice = createSlice({
   name: 'nodeEditor',
   initialState,
   reducers: {
+        clearAll: (state) => {
+      state.graphNodes = [];
+      state.connections = [];
+      state.states = [];
+      state.constants = [];
+      state.constantFiles = [];
+      state.hasChanges = false;
+    },
     // Graph node actions
     setGraphNodes: (state, action) => {
       state.graphNodes = action.payload.map(node => ({
@@ -88,6 +96,11 @@ const nodeEditorSlice = createSlice({
       );
       state.hasChanges = true;
     },
+    setConnections: (state, action) => {
+  state.connections = action.payload;
+  state.hasChanges = true;
+},
+
 
     // State management actions
     setStates: (state, action) => {
@@ -116,10 +129,12 @@ updateState: (state, action) => {
     },
 
     // Constants management actions
-    setConstants: (state, action) => {
-      state.constants = action.payload;
-      state.hasChanges = true;
-    },
+setConstants: (state, action) => {
+  console.log('Setting constants:', action.payload);
+  state.constants = action.payload;
+  state.hasChanges = true;
+},
+
     addConstant: (state, action) => {
       state.constants.push(action.payload);
       state.hasChanges = true;
@@ -154,35 +169,35 @@ updateConstant: (state, action) => {
     },
 
     // Constant files management actions
-    addConstantFile: (state, action) => {
-      state.constantFiles.push(action.payload);
-      // Also add the constants from the file to the constants array
-      state.constants.push(...action.payload.constants);
-      state.hasChanges = true;
-    },
+addConstantFile: (state, action) => {
+  console.log('Adding constant file:', action.payload);  // Log the payload for debugging
+  state.constantFiles.push(action.payload);  // Add constant file to state
+  state.constants.push(...action.payload.constants);  // Add constants to the constants array
+  state.hasChanges = true;
+},
 updateConstantFile: (state, action) => {
-  const index = state.constantFiles.findIndex(
-    file => file.configName === action.payload.configName
-  );
+  const index = state.constantFiles.findIndex(file => file.configName === action.payload.configName);
   if (index !== -1) {
-    // Update the constant file
+    console.log('Updating constant file:', action.payload);
     state.constantFiles[index] = action.payload;
 
-    // First, remove all constants associated with this configuration file
-    state.constants = state.constants.filter(constant =>
-      constant.configName !== action.payload.configName
+    // Remove the constants related to this file and add the updated ones
+    state.constants = state.constants.filter(
+      constant => constant.configName !== action.payload.configName
     );
-
-    // Then add all constants from the updated file
-    const updatedConstants = action.payload.constants.map(constant => ({
-      ...constant,
-      configName: action.payload.configName
-    }));
-    state.constants.push(...updatedConstants);
-
+    state.constants.push(...action.payload.constants);
     state.hasChanges = true;
   }
 },
+    addConstantFiles: (state, action) => {
+  console.log('Adding multiple constant files:', action.payload);  // Log the payload for debugging
+  action.payload.forEach(file => {
+    state.constantFiles.push(file);  // Add each constant file to state
+    state.constants.push(...file.constants);  // Add constants from each file to the constants array
+  });
+  state.hasChanges = true;
+},
+
     removeConstantFile: (state, action) => {
       const fileToRemove = state.constantFiles.find(
         file => file.configName === action.payload
@@ -235,6 +250,7 @@ export const {
   addConnection,
   removeConnection,
   updateConnection,
+      setConnections,
 
   // State management actions
   setStates,
@@ -247,7 +263,7 @@ export const {
   addConstant,
   updateConstant,
   removeConstant,
-
+addConstantFiles,
   // Constant files management actions
   addConstantFile,
   updateConstantFile,
@@ -260,6 +276,7 @@ export const {
   // Utility actions
   resetState,
   importState,
+    clearAll,
 } = nodeEditorSlice.actions;
 
 // Selectors

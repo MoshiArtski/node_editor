@@ -169,6 +169,13 @@ export function NodeEditorSidebarComponent() {
     return getCurrentItems();
   }, [getCurrentItems]);
 
+  useEffect(() => {
+  if (activeMenu === 'states' || activeMenu === 'constants') {
+    getCurrentItems(); // Trigger filtering or update logic
+  }
+}, [states, constants, activeMenu]);
+
+
   const fetchNodes = useCallback(async () => {
     setIsLoading(true);
     try {
